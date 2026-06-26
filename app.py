@@ -12,7 +12,7 @@ st.set_page_config(
     layout="wide"
 )
 
-client = Client()
+client = Client(provider=ApiAirforce)
 
 # -------------------------------------------------
 # SESSION
@@ -81,7 +81,7 @@ with chat_tab:
             try:
 
                 stream = client.chat.completions.create(
-                    model="gpt-5-mini",
+                    model="kimi-k2",
                     messages=st.session_state.messages,
                     stream=True
                 )
