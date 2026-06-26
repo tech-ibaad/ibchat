@@ -81,7 +81,7 @@ with chat_tab:
             try:
 
                 stream = client.chat.completions.create(
-                    model="kimi-k2",
+                    model="deepseek-v3",
                     messages=st.session_state.messages,
                     stream=True
                 )
