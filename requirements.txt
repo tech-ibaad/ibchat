@@ -1,4 +1,5 @@
 streamlit
+openai
 g4f
-pillow
 requests
+Pillow
