@@ -1,10 +1,12 @@
+import os
+import re
 import streamlit as st
-import requests
-from g4f.client import Client
+from openai import OpenAI
+from g4f.client import Client as G4FClient
 
-# -------------------------------------------------
+# ---------------------------------------------------
 # CONFIG
-# -------------------------------------------------
+# ---------------------------------------------------
 
 st.set_page_config(
     page_title="IBChat",
@@ -12,172 +14,213 @@ st.set_page_config(
     layout="wide"
 )
 
-client = Client()
+st.title("🤖 IBChat")
 
-# -------------------------------------------------
+# ---------------------------------------------------
+# API
+# ---------------------------------------------------
+
+NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
+
+if not NVIDIA_API_KEY:
+    st.error("NVIDIA_API_KEY environment variable not found.")
+    st.stop()
+
+client = OpenAI(
+    base_url="https://integrate.api.nvidia.com/v1",
+    api_key=NVIDIA_API_KEY,
+)
+
+g4f = G4FClient()
+
+# ---------------------------------------------------
 # SESSION
-# -------------------------------------------------
+# ---------------------------------------------------
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# -------------------------------------------------
+# ---------------------------------------------------
 # SIDEBAR
-# -------------------------------------------------
+# ---------------------------------------------------
 
 with st.sidebar:
-    st.title("🤖 IBChat")
-    st.write("Streamlit + g4f")
 
-    if st.button("🗑 Clear Chat"):
+    st.header("Settings")
+
+    MODEL = st.selectbox(
+        "NVIDIA Model",
+        [
+            "meta/llama-3.3-70b-instruct",
+            "meta/llama-3.1-405b-instruct",
+            "meta/llama-3.1-70b-instruct",
+            "meta/llama-3.1-8b-instruct",
+            "deepseek-ai/deepseek-r1",
+            "mistralai/mixtral-8x7b-instruct-v0.1",
+            "qwen/qwen2.5-coder-32b-instruct",
+        ],
+        index=0
+    )
+
+    temperature = st.slider(
+        "Temperature",
+        0.0,
+        2.0,
+        0.7
+    )
+
+    max_tokens = st.slider(
+        "Max Tokens",
+        256,
+        8192,
+        2048
+    )
+
+    if st.button("Clear Chat"):
         st.session_state.messages = []
         st.rerun()
 
-# -------------------------------------------------
+# ---------------------------------------------------
 # TABS
-# -------------------------------------------------
+# ---------------------------------------------------
 
-chat_tab, image_tab = st.tabs([
-    "💬 Chat",
-    "🎨 Image Generator"
-])
+chat_tab, image_tab = st.tabs(["💬 Chat", "🎨 Image"])
 
-# =================================================
+# ===================================================
 # CHAT
-# =================================================
+# ===================================================
 
 with chat_tab:
 
-    st.title("💬 IBChat")
-
     for msg in st.session_state.messages:
+
         with st.chat_message(msg["role"]):
+
+            if msg["role"] == "assistant":
+
+                if msg.get("reasoning"):
+                    with st.expander("🧠 Reasoning"):
+                        st.markdown(msg["reasoning"])
+
             st.markdown(msg["content"])
 
-    prompt = st.chat_input("Send a message...")
+    prompt = st.chat_input("Message...")
 
     if prompt:
 
-        st.session_state.messages.append({
-            "role": "user",
-            "content": prompt
-        })
+        st.session_state.messages.append(
+            {
+                "role": "user",
+                "content": prompt
+            }
+        )
 
         with st.chat_message("user"):
             st.markdown(prompt)
 
         with st.chat_message("assistant"):
 
-            reasoning_expander = st.expander(
-                "🧠 Reasoning",
-                expanded=False
+            reasoning_box = st.empty()
+            response_box = st.empty()
+
+            stream = client.chat.completions.create(
+                model=MODEL,
+                messages=st.session_state.messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stream=True,
             )
 
-            response_placeholder = st.empty()
+            full = ""
+
+            for chunk in stream:
+
+                if chunk.choices[0].delta.content:
+                    full += chunk.choices[0].delta.content
+                    response_box.markdown(full)
 
             reasoning = ""
-            response = ""
 
-            try:
+            think = re.search(
+                r"<think>(.*?)</think>",
+                full,
+                re.DOTALL
+            )
 
-                stream = client.chat.completions.create(
-                    model="deepseek-v3",
-                    messages=st.session_state.messages,
-                    stream=True
-                )
+            if think:
+                reasoning = think.group(1).strip()
+                answer = re.sub(
+                    r"<think>.*?</think>",
+                    "",
+                    full,
+                    flags=re.DOTALL
+                ).strip()
 
-                for chunk in stream:
+                reasoning_box.expander(
+                    "🧠 Reasoning",
+                    expanded=False
+                ).markdown(reasoning)
 
-                    delta = chunk.choices[0].delta
+                response_box.markdown(answer)
 
-                    # --------------------------
-                    # Reasoning
-                    # --------------------------
+            else:
+                answer = full
 
-                    if hasattr(delta, "reasoning"):
-                        if delta.reasoning:
+            st.download_button(
+                "⬇ Download",
+                answer,
+                "response.md",
+                "text/markdown"
+            )
 
-                            reasoning += delta.reasoning
-
-                            with reasoning_expander:
-                                st.markdown(reasoning)
-
-                    # --------------------------
-                    # Response
-                    # --------------------------
-
-                    if hasattr(delta, "content"):
-                        if delta.content:
-
-                            response += delta.content
-
-                            response_placeholder.markdown(response)
-
-                if reasoning == "":
-                    with reasoning_expander:
-                        st.info(
-                            "This provider/model does not expose reasoning."
-                        )
-
-            except Exception as e:
-
-                response = f"Error:\n\n{e}"
-
-                response_placeholder.error(response)
-
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": response
-        })
-
-        st.download_button(
-            "⬇ Download Response",
-            response,
-            file_name="response.md",
-            mime="text/markdown"
+        st.session_state.messages.append(
+            {
+                "role": "assistant",
+                "content": answer,
+                "reasoning": reasoning
+            }
         )
 
-# =================================================
+# ===================================================
 # IMAGE
-# =================================================
+# ===================================================
 
 with image_tab:
 
-    st.title("🎨 Image Generator")
+    st.subheader("Generate Image")
 
-    prompt = st.text_area(
-        "Image Prompt",
+    img_prompt = st.text_area(
+        "Prompt",
         height=150
     )
 
     if st.button("Generate Image"):
 
-        if prompt.strip() == "":
-            st.warning("Enter a prompt.")
-            st.stop()
-
         with st.spinner("Generating..."):
 
             try:
 
-                image = client.images.generate(
-                    prompt=prompt,
+                result = g4f.images.generate(
+                    model="flux",
+                    prompt=img_prompt,
                     response_format="url"
                 )
 
-                url = image.data[0].url
+                if hasattr(result, "data"):
 
-                img = requests.get(url).content
+                    image_url = result.data[0].url
 
-                st.image(img)
+                else:
 
-                st.download_button(
-                    "⬇ Download Image",
-                    img,
-                    file_name="image.png",
-                    mime="image/png"
+                    image_url = result[0]
+
+                st.image(
+                    image_url,
+                    use_container_width=True
                 )
+
+                st.markdown(image_url)
 
             except Exception as e:
 
-                st.error(e)
+                st.error(str(e))
