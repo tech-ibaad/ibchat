@@ -1,6 +1,10 @@
 import streamlit as st
-import g4f
-from io import BytesIO
+import requests
+from g4f.client import Client
+
+# -------------------------------------------------
+# CONFIG
+# -------------------------------------------------
 
 st.set_page_config(
     page_title="IBChat",
@@ -8,97 +12,138 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🤖 IBChat")
-st.caption("Powered by g4f")
+client = Client()
+
+# -------------------------------------------------
+# SESSION
+# -------------------------------------------------
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-tab1, tab2 = st.tabs(["💬 Chat", "🎨 Image Generator"])
+# -------------------------------------------------
+# SIDEBAR
+# -------------------------------------------------
 
-###########################
+with st.sidebar:
+    st.title("🤖 IBChat")
+    st.write("Streamlit + g4f")
+
+    if st.button("🗑 Clear Chat"):
+        st.session_state.messages = []
+        st.rerun()
+
+# -------------------------------------------------
+# TABS
+# -------------------------------------------------
+
+chat_tab, image_tab = st.tabs([
+    "💬 Chat",
+    "🎨 Image Generator"
+])
+
+# =================================================
 # CHAT
-###########################
+# =================================================
 
-with tab1:
+with chat_tab:
 
-    col1, col2 = st.columns([8,1])
+    st.title("💬 IBChat")
 
-    with col2:
-        if st.button("🗑"):
-            st.session_state.messages = []
-            st.rerun()
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
 
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-    prompt = st.chat_input("Ask anything...")
+    prompt = st.chat_input("Send a message...")
 
     if prompt:
 
-        st.session_state.messages.append(
-            {
-                "role":"user",
-                "content":prompt
-            }
-        )
+        st.session_state.messages.append({
+            "role": "user",
+            "content": prompt
+        })
 
         with st.chat_message("user"):
             st.markdown(prompt)
 
         with st.chat_message("assistant"):
 
-            placeholder = st.empty()
+            reasoning_expander = st.expander(
+                "🧠 Reasoning",
+                expanded=False
+            )
 
+            response_placeholder = st.empty()
+
+            reasoning = ""
             response = ""
 
             try:
 
-                stream = g4f.ChatCompletion.create(
-                    model="gpt-4",
+                stream = client.chat.completions.create(
+                    model="gpt-5-mini",
                     messages=st.session_state.messages,
                     stream=True
                 )
 
                 for chunk in stream:
-                    response += chunk
-                    placeholder.markdown(response)
 
-            except:
+                    delta = chunk.choices[0].delta
 
-                response = g4f.ChatCompletion.create(
-                    model="gpt-4",
-                    messages=st.session_state.messages
-                )
+                    # --------------------------
+                    # Reasoning
+                    # --------------------------
 
-                placeholder.markdown(response)
+                    if hasattr(delta, "reasoning"):
+                        if delta.reasoning:
 
-        st.session_state.messages.append(
-            {
-                "role":"assistant",
-                "content":response
-            }
-        )
+                            reasoning += delta.reasoning
 
-    if st.session_state.messages:
+                            with reasoning_expander:
+                                st.markdown(reasoning)
 
-        history = ""
+                    # --------------------------
+                    # Response
+                    # --------------------------
 
-        for m in st.session_state.messages:
-            history += f"{m['role'].upper()}:\n{m['content']}\n\n"
+                    if hasattr(delta, "content"):
+                        if delta.content:
+
+                            response += delta.content
+
+                            response_placeholder.markdown(response)
+
+                if reasoning == "":
+                    with reasoning_expander:
+                        st.info(
+                            "This provider/model does not expose reasoning."
+                        )
+
+            except Exception as e:
+
+                response = f"Error:\n\n{e}"
+
+                response_placeholder.error(response)
+
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": response
+        })
 
         st.download_button(
-            "📥 Download Chat",
-            history,
-            "conversation.txt"
+            "⬇ Download Response",
+            response,
+            file_name="response.md",
+            mime="text/markdown"
         )
 
-###########################
-# IMAGE GENERATOR
-###########################
+# =================================================
+# IMAGE
+# =================================================
 
-with tab2:
+with image_tab:
+
+    st.title("🎨 Image Generator")
 
     prompt = st.text_area(
         "Image Prompt",
@@ -109,19 +154,30 @@ with tab2:
 
         if prompt.strip() == "":
             st.warning("Enter a prompt.")
-        else:
+            st.stop()
 
-            with st.spinner("Generating..."):
+        with st.spinner("Generating..."):
 
-                try:
+            try:
 
-                    image_url = g4f.Image.create(
-                        prompt=prompt
-                    )
+                image = client.images.generate(
+                    prompt=prompt,
+                    response_format="url"
+                )
 
-                    st.image(image_url)
+                url = image.data[0].url
 
-                    st.markdown(f"[Open Image]({image_url})")
+                img = requests.get(url).content
 
-                except Exception as e:
-                    st.error(e)
+                st.image(img)
+
+                st.download_button(
+                    "⬇ Download Image",
+                    img,
+                    file_name="image.png",
+                    mime="image/png"
+                )
+
+            except Exception as e:
+
+                st.error(e)
