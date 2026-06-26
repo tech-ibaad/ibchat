@@ -12,7 +12,7 @@ st.set_page_config(
     layout="wide"
 )
 
-client = Client(provider=ApiAirforce)
+client = Client()
 
 # -------------------------------------------------
 # SESSION
