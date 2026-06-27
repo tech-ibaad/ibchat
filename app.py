@@ -121,10 +121,16 @@ with chat_tab:
             full = ""
 
             for chunk in stream:
+                if not chunk.choices:
+                    continue
 
-                if chunk.choices[0].delta.content:
-                    full += chunk.choices[0].delta.content
+                delta = chunk.choices[0].delta
+            
+                if getattr(delta, "content", None):
+                    full += delta.content
                     response_box.markdown(full)
+
+            
 
             reasoning = ""
 
