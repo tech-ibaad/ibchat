@@ -158,7 +158,7 @@ with chat_tab:
                         )
 
                         response_placeholder.markdown(cleaned)
-                                        reasoning = ""
+                reasoning = ""
                 answer = full_text.strip()
 
                 think_match = re.search(
