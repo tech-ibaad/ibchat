@@ -34,7 +34,7 @@ client = OpenAI(
 g4f = G4FClient()
 
 # ---------------------------------------------------
-# SESSION
+# SESSION STATE
 # ---------------------------------------------------
 
 if "messages" not in st.session_state:
@@ -45,25 +45,28 @@ if "messages" not in st.session_state:
 # ---------------------------------------------------
 
 with st.sidebar:
+
     st.header("Settings")
 
-    st.markdown("**Model:** Kimi k2.6")
+    st.markdown("**Model:** Kimi K2.6")
 
     temperature = st.slider(
         "Temperature",
-        0.0,
-        2.0,
-        0.7
+        min_value=0.0,
+        max_value=2.0,
+        value=0.7,
+        step=0.1,
     )
 
     max_tokens = st.slider(
         "Max Tokens",
-        256,
-        32768,
-        4096
+        min_value=256,
+        max_value=32768,
+        value=4096,
+        step=256,
     )
 
-    if st.button("Clear Chat"):
+    if st.button("🗑 Clear Chat", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
 
@@ -71,7 +74,12 @@ with st.sidebar:
 # TABS
 # ---------------------------------------------------
 
-chat_tab, image_tab = st.tabs(["💬 Chat", "🎨 Image"])
+chat_tab, image_tab = st.tabs(
+    [
+        "💬 Chat",
+        "🎨 Image Generator",
+    ]
+)
 
 # ===================================================
 # CHAT
@@ -79,18 +87,27 @@ chat_tab, image_tab = st.tabs(["💬 Chat", "🎨 Image"])
 
 with chat_tab:
 
-    for msg in st.session_state.messages:
+    # Scrollable history container.
+    # This keeps chat_input fixed at the bottom.
+    history = st.container(height=650)
 
-        with st.chat_message(msg["role"]):
+    with history:
 
-            if msg["role"] == "assistant":
+        for msg in st.session_state.messages:
 
-                if msg.get("reasoning"):
+            with st.chat_message(msg["role"]):
+
+                if (
+                    msg["role"] == "assistant"
+                    and msg.get("reasoning")
+                ):
                     with st.expander("🧠 Reasoning"):
                         st.markdown(msg["reasoning"])
 
-            st.markdown(msg["content"])
+                st.markdown(msg["content"])
 
+    # IMPORTANT:
+    # chat_input MUST be the last widget so it remains pinned.
     prompt = st.chat_input("Message...")
 
     if prompt:
@@ -98,121 +115,138 @@ with chat_tab:
         st.session_state.messages.append(
             {
                 "role": "user",
-                "content": prompt
+                "content": prompt,
             }
         )
 
-        with st.chat_message("user"):
-            st.markdown(prompt)
+        with history:
 
-        with st.chat_message("assistant"):
+            with st.chat_message("user"):
+                st.markdown(prompt)
 
-            reasoning_box = st.empty()
-            response_box = st.empty()
+            with st.chat_message("assistant"):
 
-            stream = client.chat.completions.create(
-                model="moonshotai/kimi-k2.6",
-                messages=st.session_state.messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                stream=True,
-            )
+                reasoning_placeholder = st.empty()
+                response_placeholder = st.empty()
 
-            full = ""
+                stream = client.chat.completions.create(
+                    model="moonshotai/kimi-k2.6",
+                    messages=st.session_state.messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    stream=True,
+                )
 
-            for chunk in stream:
-                if not chunk.choices:
-                    continue
+                full_text = ""
 
-                delta = chunk.choices[0].delta
-            
-                if getattr(delta, "content", None):
-                    full += delta.content
-                    response_box.markdown(full)
+                for chunk in stream:
 
-            
+                    if not chunk.choices:
+                        continue
 
-            reasoning = ""
+                    delta = chunk.choices[0].delta
 
-            think = re.search(
-                r"<think>(.*?)</think>",
-                full,
-                re.DOTALL
-            )
+                    if getattr(delta, "content", None):
 
-            if think:
-                reasoning = think.group(1).strip()
-                answer = re.sub(
-                    r"<think>.*?</think>",
-                    "",
-                    full,
-                    flags=re.DOTALL
-                ).strip()
+                        full_text += delta.content
 
-                reasoning_box.expander(
-                    "🧠 Reasoning",
-                    expanded=False
-                ).markdown(reasoning)
+                        cleaned = re.sub(
+                            r"<think>.*",
+                            "",
+                            full_text,
+                            flags=re.DOTALL,
+                        )
 
-                response_box.markdown(answer)
+                        response_placeholder.markdown(cleaned)
+                                        reasoning = ""
+                answer = full_text.strip()
 
-            else:
-                answer = full
+                think_match = re.search(
+                    r"<think>(.*?)</think>",
+                    full_text,
+                    flags=re.DOTALL,
+                )
 
-            st.download_button(
-                "⬇ Download",
-                answer,
-                "response.md",
-                "text/markdown"
-            )
+                if think_match:
+
+                    reasoning = think_match.group(1).strip()
+
+                    answer = re.sub(
+                        r"<think>.*?</think>",
+                        "",
+                        full_text,
+                        flags=re.DOTALL,
+                    ).strip()
+
+                    with reasoning_placeholder.expander(
+                        "🧠 Reasoning",
+                        expanded=False,
+                    ):
+                        st.markdown(reasoning)
+
+                response_placeholder.markdown(answer)
+
+                st.download_button(
+                    label="⬇ Download Response",
+                    data=answer,
+                    file_name="response.md",
+                    mime="text/markdown",
+                    key=f"download_{len(st.session_state.messages)}",
+                )
 
         st.session_state.messages.append(
             {
                 "role": "assistant",
                 "content": answer,
-                "reasoning": reasoning
+                "reasoning": reasoning,
             }
         )
 
 # ===================================================
-# IMAGE
+# IMAGE GENERATOR
 # ===================================================
 
 with image_tab:
 
-    st.subheader("Generate Image")
+    st.subheader("🎨 Generate Image")
 
     img_prompt = st.text_area(
         "Prompt",
-        height=150
+        height=150,
+        placeholder="Describe the image you want...",
     )
 
-    if st.button("Generate Image"):
+    if st.button(
+        "Generate Image",
+        use_container_width=True,
+    ):
 
-        with st.spinner("Generating..."):
+        if not img_prompt.strip():
+            st.warning("Please enter a prompt.")
+            st.stop()
+
+        with st.spinner("Generating image..."):
 
             try:
 
                 result = g4f.images.generate(
                     model="flux",
                     prompt=img_prompt,
-                    response_format="url"
+                    response_format="url",
                 )
 
                 if hasattr(result, "data"):
-
                     image_url = result.data[0].url
-
                 else:
-
                     image_url = result[0]
 
                 st.image(
                     image_url,
-                    use_container_width=True
+                    use_container_width=True,
                 )
 
-                st.markdown(image_url)
+                st.markdown("### Image URL")
+                st.code(image_url)
 
             except Exception as e:
 
