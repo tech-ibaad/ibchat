@@ -47,7 +47,7 @@ if "messages" not in st.session_state:
 with st.sidebar:
     st.header("Settings")
 
-    st.markdown("**Model:** Kimi K2")
+    st.markdown("**Model:** Kimi k2.6")
 
     temperature = st.slider(
         "Temperature",
@@ -111,7 +111,7 @@ with chat_tab:
             response_box = st.empty()
 
             stream = client.chat.completions.create(
-                model="moonshotai/kimi-k2-instruct",
+                model="moonshotai/kimi-k2.6",
                 messages=st.session_state.messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
