@@ -45,22 +45,9 @@ if "messages" not in st.session_state:
 # ---------------------------------------------------
 
 with st.sidebar:
-
     st.header("Settings")
 
-    MODEL = st.selectbox(
-        "NVIDIA Model",
-        [
-            "meta/llama-3.3-70b-instruct",
-            "meta/llama-3.1-405b-instruct",
-            "meta/llama-3.1-70b-instruct",
-            "meta/llama-3.1-8b-instruct",
-            "deepseek-ai/deepseek-r1",
-            "mistralai/mixtral-8x7b-instruct-v0.1",
-            "qwen/qwen2.5-coder-32b-instruct",
-        ],
-        index=0
-    )
+    st.markdown("**Model:** Kimi K2")
 
     temperature = st.slider(
         "Temperature",
@@ -72,8 +59,8 @@ with st.sidebar:
     max_tokens = st.slider(
         "Max Tokens",
         256,
-        8192,
-        2048
+        32768,
+        4096
     )
 
     if st.button("Clear Chat"):
@@ -124,7 +111,7 @@ with chat_tab:
             response_box = st.empty()
 
             stream = client.chat.completions.create(
-                model=MODEL,
+                model="moonshotai/kimi-k2-instruct",
                 messages=st.session_state.messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
